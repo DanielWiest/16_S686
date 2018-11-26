@@ -21,7 +21,7 @@ Available [here](https://www.adafruit.com/product/1578) $7.95
    
    
 ### 5. Hyperion High Speed Servo Actuator:
-![alt text](https://www.scaleflying.com/thumbnail.asp?file=assets/images/photos/EMHP-DS095FMD-2.jpg "Hyperion Servo")
+![alt text](https://www.soaringusa.com/images/product/p-18022-450.jpg "Hyperion Servo")
 Available [here](https://hyperion-world.com/en/p1772889-hp-ds09-gmd-14179) $11.86
    
    
