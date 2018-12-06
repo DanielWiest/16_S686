@@ -8,12 +8,15 @@
 //#include <avr/interrupt.h>
 
 #define LOGGING_FREQUENCY 100.0
-#define MAX_LOG_NUMBER 500
+#define MAX_LOG_NUMBER 750
 
 const int chipSelect = BUILTIN_SDCARD;
 File dataFile;
 
-Adafruit_BNO055 bno = Adafruit_BNO055(55); 
+Adafruit_BNO055 bno = Adafruit_BNO055(55);
+
+String rootFile = "datalog";
+int fileIndex = 0;
 
 class ControlObject { //contains all the needed info on a planet
 public:
@@ -70,6 +73,10 @@ bool ControlObject::timeToLog(){
 //    control_obj.logState()
 //}
 
+const char* string2char(const String& command){
+  return command.c_str();
+}
+
 ControlObject control_obj;
 
 //––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -91,7 +98,16 @@ void setup() {
   }
   Serial.println("Card initialized!");
 
-  dataFile = SD.open("data_log.csv", FILE_WRITE); // TODO: Add new file if "data_log.csv" already exists SD.exists()
+  while ( SD.exists( (rootFile+String(fileIndex)+String(".csv")).c_str() ) ) {
+    fileIndex += 1;
+  }
+  
+  Serial.println((rootFile+String(fileIndex)+String(".csv")).c_str());
+  
+  //String("testData.csv").c_str() , FILE_WRITE);
+  
+  dataFile = SD.open( (rootFile+String(fileIndex)+String(".csv")).c_str() , FILE_WRITE); // TODO: Add new file if "data_log.csv" already exists SD.exists()
+  
   if (dataFile) {
     dataFile.println("Time,Euler_x,Euler_y,Euler_z,Grav_x,Grav_y,Grav_z,LinAcc_x,LinAcc_y,LinAcc_z,Control_Setpoint");
   } else {
