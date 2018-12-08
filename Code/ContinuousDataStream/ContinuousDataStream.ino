@@ -69,9 +69,11 @@ void loop(void)
   imu::Vector<3> euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
 
   /* Display the floating point data */
+  Serial.print(euler.x());
+   Serial.print(",");
+  Serial.print(euler.y());
+  Serial.print(",");
   Serial.println(euler.z());
-  //Serial.print(euler.y());
-  //Serial.print(euler.z());
 
   delay(BNO055_SAMPLERATE_DELAY_MS);
 }

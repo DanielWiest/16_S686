@@ -6,11 +6,14 @@
 #include <SD.h>
 #include <math.h>
 #include <EEPROM.h>
+#include <PWMServo.h>
 
 #define LOGGING_FREQUENCY 100.0
 #define MAX_LOG_NUMBER 850
 
 const int chipSelect = BUILTIN_SDCARD;
+
+PWMServo myservo;  // create servo object to control a servo
 File dataFile;
 
 Adafruit_BNO055 bno = Adafruit_BNO055(55);
@@ -28,15 +31,19 @@ public:
     imu::Quaternion quat;
     double errorAngle;
     double controlSetpoint;
+    unsigned long curTime = millis();
+    int numberLogs = 0;
+    double updateTime = (1.0/LOGGING_FREQUENCY)*1000.0;
+
+    //TODO: Add PID Parameters
+    
     void printErrorTerm();
     void logState();
     void updateState();
     void serialData();
     void gravityAngles();
-    bool timeToLog();
-    unsigned long curTime = millis();
-    int numberLogs = 0;
-    double updateTime = (1.0/LOGGING_FREQUENCY)*1000.0; 
+    void PIDCalcAndSend();
+    bool timeToLog(); 
     
     
 };
@@ -62,11 +69,7 @@ void ControlObject::updateState() {
   imu::Vector<3> gravCorr(0.0,0.0,-1.0);// = Vector()//this->gravity.scale(-1.0); // GRAVITY CORRECTION???
   
   imu::Vector<3> rot_state = this->quat.rotateVector(upwardsVector);
-  //Serial.println(String(rot_state.toString()));
-  
   //imu::Matrix<3> rot_mat = quat.toMatrix();
-
-  
   //imu::Vector<3> rot_state = quat.onVertVect();
   
   imu::Vector<3> projRotOntoPlane = (rot_state - (this->initialThrowDirection)*(rot_state.dot(this->initialThrowDirection)));
@@ -103,7 +106,7 @@ void ControlObject::logState() {
   String controlSetpointData = String(this->controlSetpoint);
   String errorValueData = String(this->errorAngle);
 
-  String totalResult = String(timeData+","+eulerData+","+gravityData+","+linAccData+","+controlSetpointData+errorValueData);
+  String totalResult = String(timeData+","+eulerData+","+gravityData+","+linAccData+","+controlSetpointData+","+errorValueData);
   dataFile.println(totalResult);
   dataFile.flush();
   this->numberLogs = this->numberLogs + 1;
@@ -114,35 +117,14 @@ bool ControlObject::timeToLog(){
   return ( (this->numberLogs < MAX_LOG_NUMBER) && ((millis()-(this->curTime)) > updateTime) );
 }
 
-//ISR(TIMER0_OVF_vect)
-//{
-//    control_obj.logState()
-//}
-
-const char* string2char(const String& command){
-  return command.c_str();
+void ControlObject::PIDCalcAndSend() {
+  int servoControl = map(-1.0*this->errorAngle, -PI/2.0, PI/2.0, 0, 180);
+  int writeToServo = constrain(servoControl, 0, 180);
+  myservo.write(writeToServo);
 }
 
-ControlObject control_obj;
 
-uint8_t *system_status;
-uint8_t *self_test_result;
-uint8_t *system_error;
-
-//––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-
-
-
-void setup() {
-  pinMode(LED_BUILTIN , OUTPUT);
-
-  Serial.begin(115200);
-  if(!bno.begin()){
-    Serial.println("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    while(1);}
-    
-  // Sensor Calibration –––––––––––––––––––
-
+void loadSensorCalib() {
   int eeAddress = 0;
   long bnoID;
   bool foundCalib = false;
@@ -169,11 +151,31 @@ void setup() {
 
       Serial.println("\n\nCalibration data loaded into BNO055");
   }
+}
 
-  // –––––––––––––––––––––––––––––
+ControlObject control_obj;
+
+uint8_t *system_status;
+uint8_t *self_test_result;
+uint8_t *system_error;
+
+//––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+
+void setup() {
+  pinMode(LED_BUILTIN , OUTPUT);
+
+  Serial.begin(115200);
+  if(!bno.begin()){
+    Serial.println("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+    while(1);}
+    
+  loadSensorCalib();
 
   bno.setExtCrystalUse(true);
   bno.setMode(Adafruit_BNO055::OPERATION_MODE_M4G); // Because the gyroscope saturates at just over 5 RPS
+
     
   bno.getSystemStatus(system_status, self_test_result, system_error);
   Serial.println("ACC SELF TESTS TO FOLLOW:");
@@ -205,17 +207,22 @@ void setup() {
   control_obj.initialThrowDirection.x() = 1.0;
   control_obj.initialThrowDirection.y() = 0.0;
   control_obj.initialThrowDirection.z() = 0.0;
+
+   myservo.attach(30, 1000, 2000); // 100
+
+  digitalWrite(LED_BUILTIN, HIGH);
   
 }
 
 void loop() {
   control_obj.updateState();
   //Serial.println(control_obj.curTime - millis());
-  control_obj.printErrorTerm();
-  //if (control_obj.timeToLog()) {
+  //control_obj.printErrorTerm();
+  control_obj.PIDCalcAndSend();
+  if (control_obj.timeToLog()) {
       //Serial.println("LOGGING!");
-      //control_obj.logState();
+      control_obj.logState();
       //control_obj.serialData();
       //control_obj.printErrorTerm();
- // }
+  }
 }
