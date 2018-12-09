@@ -11,6 +11,15 @@
 #define LOGGING_FREQUENCY 100.0
 #define MAX_LOG_NUMBER 850
 
+/* TODO: 
+ *    ADD Throw detection and find the initial velocity direction!
+ *    FIX the bug with having 10 or more data logging csv files on the SD card!
+ *    TEST the wobble selection axis of interest code!
+ *    ADD PID Control???
+ *    TUNE Servo throw!
+ *    TEST servo movement direction in opposing positions!
+ */
+
 const int chipSelect = BUILTIN_SDCARD;
 
 PWMServo myservo;  // create servo object to control a servo
@@ -29,6 +38,7 @@ class ControlObject { //contains all the needed info on a planet
 public:
     imu::Vector<3> euler,gravity,lin_acc,initialThrowDirection; // initDir must be a unit vector!
     imu::Quaternion quat;
+    double throwEulerHeading; // SET ON DEFINITION OF initialThrowDirection! (only calculate once) 
     double errorAngle;
     double controlSetpoint;
     unsigned long curTime = millis();
@@ -43,6 +53,7 @@ public:
     void serialData();
     void gravityAngles();
     void PIDCalcAndSend();
+    void calcEulerHeadingOffset();
     bool timeToLog(); 
     
     
@@ -86,14 +97,33 @@ void ControlObject::updateState() {
   double sinTheta = (((this->initialThrowDirection.cross(projGravOntoPlane)).dot(projRotOntoPlane))/magAB);
 
   if (sinTheta >= 0.0) {
-      this->errorAngle = thetaFromCos - PI;
+      this->errorAngle = (thetaFromCos - PI)*cos(radians( (this->euler).x() ) + this->throwEulerHeading );
   } else {
-      this->errorAngle = (PI-thetaFromCos);
+      this->errorAngle = (PI-thetaFromCos)*cos(radians( (this->euler).x() ) + this->throwEulerHeading );
   }
 }
 
 void ControlObject::printErrorTerm() {
   Serial.println(String(this->errorAngle));
+}
+
+void ControlObject::calcEulerHeadingOffset() {
+  imu::Vector<3> xyPlane(0.0,0.0,1.0);
+  imu::Vector<3> ZeroDegreeAxis(1.0,0.0,0.0);
+  imu::Vector<3> throwProjOntoXY = (this->initialThrowDirection - (xyPlane)*(this->initialThrowDirection.dot(xyPlane)));
+
+  double magAB2 = throwProjOntoXY.magnitude();
+  double thetaFromCos2 = acos( (throwProjOntoXY.dot(ZeroDegreeAxis))/(magAB2));
+
+  //       sin(theta) = ((normal X a) dot b)/(mag a * mag b) 
+  double sinTheta = (((xyPlane.cross(ZeroDegreeAxis)).dot(throwProjOntoXY))/magAB2);
+
+  if (sinTheta >= 0.0) {
+      throwEulerHeading = thetaFromCos2;
+  } else {
+      throwEulerHeading = (2.0*PI-thetaFromCos2);
+  }
+  
 }
 
 void ControlObject::logState() {
@@ -207,6 +237,9 @@ void setup() {
   control_obj.initialThrowDirection.x() = 1.0;
   control_obj.initialThrowDirection.y() = 0.0;
   control_obj.initialThrowDirection.z() = 0.0;
+
+  // FOR TESTING PURPOSES!
+  control_obj.throwEulerHeading = 0;
 
    myservo.attach(30, 1000, 2000); // 100
 
