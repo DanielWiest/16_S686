@@ -29,10 +29,12 @@ Adafruit_BNO055 bno = Adafruit_BNO055(55);
 
 adafruit_bno055_offsets_t calibrationData;
 
-String rootFile = "datalog";
+String rootFile = "datLOG";
 int fileIndex = 0;
 
 imu::Vector<3> upwardsVector(0.0,0.0,1.0);
+imu::Vector<3> forwardsVector(1.0,0.0,0.0);
+imu::Vector<3> gravityVec(0.0,0.0,-1.0);
 
 class ControlObject { //contains all the needed info on a planet
 public:
@@ -55,8 +57,7 @@ public:
     void PIDCalcAndSend();
     void calcEulerHeadingOffset();
     bool timeToLog(); 
-    
-    
+      
 };
 
 void ControlObject::serialData() {
@@ -72,35 +73,48 @@ void ControlObject::serialData() {
 }
 
 void ControlObject::updateState() {
+  // Update internal class variables
   this->euler = bno.getVector(Adafruit_BNO055::VECTOR_EULER);
   this->quat = bno.getQuat();
   this->gravity = bno.getVector(Adafruit_BNO055::VECTOR_GRAVITY);
   this->lin_acc = bno.getVector(Adafruit_BNO055::VECTOR_LINEARACCEL);
 
-  imu::Vector<3> gravCorr(0.0,0.0,-1.0);// = Vector()//this->gravity.scale(-1.0); // GRAVITY CORRECTION???
-  
-  imu::Vector<3> rot_state = this->quat.rotateVector(upwardsVector);
-  //imu::Matrix<3> rot_mat = quat.toMatrix();
-  //imu::Vector<3> rot_state = quat.onVertVect();
-  
-  imu::Vector<3> projRotOntoPlane = (rot_state - (this->initialThrowDirection)*(rot_state.dot(this->initialThrowDirection)));
-  imu::Vector<3> projGravOntoPlane = (gravCorr - this->initialThrowDirection*(gravCorr.dot(this->initialThrowDirection)));
-  
-  double magAB = projRotOntoPlane.magnitude()*projGravOntoPlane.magnitude();
-  
-  //if (magAB == 0.0) {
-  //  magAB = 0.0000001;} // Needed to prevent divide by zero?
-  
-  double thetaFromCos = acos( (projRotOntoPlane.dot(projGravOntoPlane))/(magAB));
+  imu::Vector<3> rot_state_vert = this->quat.rotateVector(upwardsVector);
+  imu::Vector<3> rot_state_horiz = this->quat.rotateVector(forwardsVector);
 
+  // Calculate error in tilt perpendicular to the direction of original throw
+  imu::Vector<3> projRotOntoPlane = (rot_state_vert - (this->initialThrowDirection)*(rot_state_vert.dot(this->initialThrowDirection)));
+  imu::Vector<3> projGravOntoPlane = (gravityVec - this->initialThrowDirection*(gravityVec.dot(this->initialThrowDirection)));
+  double magAB = projRotOntoPlane.magnitude()*projGravOntoPlane.magnitude();
+  double thetaFromCos = acos( (projRotOntoPlane.dot(projGravOntoPlane))/(magAB));
   //       sin(theta) = ((normal X a) dot b)/(mag a * mag b)
   double sinTheta = (((this->initialThrowDirection.cross(projGravOntoPlane)).dot(projRotOntoPlane))/magAB);
-
+  double tiltError;
   if (sinTheta >= 0.0) {
-      this->errorAngle = (thetaFromCos - PI)*cos(radians( (this->euler).x() ) + this->throwEulerHeading );
+      tiltError = (thetaFromCos - PI);
   } else {
-      this->errorAngle = (PI-thetaFromCos)*cos(radians( (this->euler).x() ) + this->throwEulerHeading );
+      tiltError = (PI - thetaFromCos);
   }
+  //Serial.println(tiltError);
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+  // Calculate error in heading so that corrections can be made in the correct phase
+  imu::Vector<3> projHeadingOntoXY = (rot_state_horiz - (upwardsVector)*(rot_state_horiz.dot(upwardsVector)));
+  double magHeading = projHeadingOntoXY.magnitude();
+  double thetaFromCosHeading = acos( (projHeadingOntoXY.dot(forwardsVector))/(magHeading));
+  double sinThetaHeading = (((upwardsVector.cross(forwardsVector)).dot(projHeadingOntoXY))/magHeading);
+  double headingAngle;
+  if (sinThetaHeading >= 0.0) {
+      headingAngle = (thetaFromCosHeading);
+  } else {
+      headingAngle = (2.0*PI - thetaFromCosHeading);
+  }
+  double directionalScalar = cos( headingAngle - this->throwEulerHeading );
+  //Serial.println(directionalScalar);
+  // –––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+
+  this->errorAngle = tiltError*directionalScalar; //Push the correct result to class
 }
 
 void ControlObject::printErrorTerm() {
@@ -109,20 +123,21 @@ void ControlObject::printErrorTerm() {
 
 void ControlObject::calcEulerHeadingOffset() {
   imu::Vector<3> xyPlane(0.0,0.0,1.0);
-  imu::Vector<3> ZeroDegreeAxis(1.0,0.0,0.0);
+  //imu::Vector<3> ZeroDegreeAxis(1.0,0.0,0.0);
   imu::Vector<3> throwProjOntoXY = (this->initialThrowDirection - (xyPlane)*(this->initialThrowDirection.dot(xyPlane)));
 
   double magAB2 = throwProjOntoXY.magnitude();
-  double thetaFromCos2 = acos( (throwProjOntoXY.dot(ZeroDegreeAxis))/(magAB2));
+  double thetaFromCos2 = acos( (throwProjOntoXY.dot(forwardsVector))/(magAB2));
 
   //       sin(theta) = ((normal X a) dot b)/(mag a * mag b) 
-  double sinTheta = (((xyPlane.cross(ZeroDegreeAxis)).dot(throwProjOntoXY))/magAB2);
+  double sinTheta = (((xyPlane.cross(forwardsVector)).dot(throwProjOntoXY))/magAB2);
 
   if (sinTheta >= 0.0) {
-      throwEulerHeading = thetaFromCos2;
+      this->throwEulerHeading = thetaFromCos2;
   } else {
-      throwEulerHeading = (2.0*PI-thetaFromCos2);
+      this->throwEulerHeading = (2.0*PI-thetaFromCos2);
   }
+  Serial.println(this->throwEulerHeading);
   
 }
 
@@ -143,7 +158,7 @@ void ControlObject::logState() {
     
 }
 
-bool ControlObject::timeToLog(){
+bool ControlObject::timeToLog() {
   return ( (this->numberLogs < MAX_LOG_NUMBER) && ((millis()-(this->curTime)) > updateTime) );
 }
 
@@ -183,14 +198,14 @@ void loadSensorCalib() {
   }
 }
 
-ControlObject control_obj;
-
 uint8_t *system_status;
 uint8_t *self_test_result;
 uint8_t *system_error;
 
-//––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+ControlObject control_obj;
 
+
+//––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
 
 void setup() {
@@ -215,9 +230,14 @@ void setup() {
   
   if (!SD.begin(chipSelect)) {
     Serial.println("Card failed, or not present");
-    while (1);} else {
-  Serial.println("Card initialized!");
-    }
+    while (1){
+        digitalWrite(LED_BUILTIN, HIGH);
+        delay(500);
+        digitalWrite(LED_BUILTIN, LOW);
+        delay(500);}} 
+  else {
+    Serial.println("Card initialized!");
+  }
 
   while ( SD.exists( (rootFile+String(fileIndex)+String(".csv")).c_str() ) ) {
     fileIndex += 1;}
@@ -231,7 +251,13 @@ void setup() {
     dataFile.println("Time,Euler_yaw,Euler_roll,Euler_pitch,Grav_x,Grav_y,Grav_z,LinAcc_x,LinAcc_y,LinAcc_z,Control_Setpoint,Error_Angle");
   } else {
     Serial.println("Data file failed to open... :(");
-    while (1);}
+    while (1) {
+      digitalWrite(LED_BUILTIN, HIGH);
+      delay(500);
+      digitalWrite(LED_BUILTIN, LOW);
+      delay(500);
+     }
+    }
 
   // FOR TESTING PURPOSES!
   control_obj.initialThrowDirection.x() = 1.0;
@@ -239,9 +265,9 @@ void setup() {
   control_obj.initialThrowDirection.z() = 0.0;
 
   // FOR TESTING PURPOSES!
-  control_obj.throwEulerHeading = 0;
+  control_obj.calcEulerHeadingOffset();
 
-   myservo.attach(30, 1000, 2000); // 100
+   myservo.attach(30, 1000, 2000);
 
   digitalWrite(LED_BUILTIN, HIGH);
   
@@ -250,12 +276,12 @@ void setup() {
 void loop() {
   control_obj.updateState();
   //Serial.println(control_obj.curTime - millis());
-  //control_obj.printErrorTerm();
+  control_obj.printErrorTerm();
   control_obj.PIDCalcAndSend();
+  
   if (control_obj.timeToLog()) {
       //Serial.println("LOGGING!");
       control_obj.logState();
       //control_obj.serialData();
-      //control_obj.printErrorTerm();
   }
 }

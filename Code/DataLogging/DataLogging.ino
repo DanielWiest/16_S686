@@ -64,11 +64,6 @@ void ControlObject::updateState() {
   imu::Vector<3> rot_state = this->quat.rotateVector(upwardsVector);
   //Serial.println(String(rot_state.toString()));
   
-  //imu::Matrix<3> rot_mat = quat.toMatrix();
-
-  
-  //imu::Vector<3> rot_state = quat.onVertVect();
-  
   imu::Vector<3> projRotOntoPlane = (rot_state - (this->initialThrowDirection)*(rot_state.dot(this->initialThrowDirection)));
   imu::Vector<3> projGravOntoPlane = (gravCorr - this->initialThrowDirection*(gravCorr.dot(this->initialThrowDirection)));
   
