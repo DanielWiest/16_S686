@@ -209,9 +209,6 @@ public:
     String toString(){
         return String( String(p_vec[0])+","+String(p_vec[1])+","+String(p_vec[2]) );
     }
-
-
-private:
     double p_vec[N];
 };
 
