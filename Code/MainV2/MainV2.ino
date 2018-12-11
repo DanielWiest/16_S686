@@ -47,8 +47,12 @@ public:
     double updateTime = (1.0/LOGGING_FREQUENCY)*1000.0;
     const int rotation_direction = 1;
 
+    double phaseError;
+
     //TODO: Add PID Parameters
     const double kPID = 2.0;
+    const double dPID = 0.0; // Currently Unused
+    const double iPID = 0.0; // Currently Unused
     
     void printErrorTerm();
     void logState();
@@ -57,11 +61,13 @@ public:
     void gravityAngles();
     void PIDCalcAndSend();
     void calcEulerHeadingOffset();
-    bool timeToLog(); 
+    bool timeToLog();
+    double calculateControlOutput();
       
 };
 
 void ControlObject::serialData() {
+
   String timeData = String("Time: "+String(this->curTime)+"\n");
   String eulerData = String("Euler: "+this->euler.toString()+"\n");
   String gravityData = String("Gravity: "+this->gravity.toString()+"\n");
@@ -71,6 +77,10 @@ void ControlObject::serialData() {
 
   String totalResult = String(timeData+eulerData+gravityData+linAccData+controlSetpointData+errorValueData);
   Serial.print(totalResult);
+}
+
+double ControlObject::calculateControlOutput() {
+  return ((this->phaseError)*(this->rotation_direction)*( (this->errorAngle)*(this->kPID) ));
 }
 
 void ControlObject::updateState() {
@@ -90,12 +100,12 @@ void ControlObject::updateState() {
   double thetaFromCos = acos( (projRotOntoPlane.dot(projGravOntoPlane))/(magAB));
   //       sin(theta) = ((normal X a) dot b)/(mag a * mag b)
   double sinTheta = (((this->initialThrowDirection.cross(projGravOntoPlane)).dot(projRotOntoPlane))/magAB);
-  double tiltError;
+  double tiltAngle;
   
   if (sinTheta >= 0.0) {
-      tiltError = (thetaFromCos - PI);
+      tiltAngle = (thetaFromCos - PI);
   } else {
-      tiltError = (PI - thetaFromCos);
+      tiltAngle = (PI - thetaFromCos);
   }
   //Serial.println(tiltError);
   // –––––––––––––––––––––––––––––––––––––––––––––––––––––––
@@ -112,15 +122,19 @@ void ControlObject::updateState() {
       headingAngle = (2.0*PI - thetaFromCosHeading);
   }
   double directionalScalar = cos( headingAngle - this->throwEulerHeading );
+
+  this->phaseError = directionalScalar;
+  
   //Serial.println(directionalScalar);
   // –––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
-  this->errorAngle = ( this->controlSetpoint - (tiltError*directionalScalar*(this->rotation_direction)) ); //Push the correct result to class
+  //this->errorAngle = ( this->controlSetpoint - (tiltError*directionalScalar*(this->rotation_direction)) ); //Push the correct result to class
+  this->errorAngle = ( this->controlSetpoint - tiltAngle ); //Push the correct result to class
   
 }
 
 void ControlObject::printErrorTerm() {
-  Serial.println(String((this->errorAngle)*(this->kPID)));
+  Serial.println(String(calculateControlOutput()));
 }
 
 void ControlObject::calcEulerHeadingOffset() {
@@ -167,7 +181,7 @@ bool ControlObject::timeToLog() {
 }
 
 void ControlObject::PIDCalcAndSend() {
-  int servoControl = map( (this->errorAngle)*(this->kPID), -PI, PI, 0, 180);
+  int servoControl = map( this->calculateControlOutput(), -PI, PI, 0, 180);
   int writeToServo = constrain(servoControl, 0, 180);
   myservo.write(writeToServo);
 }
