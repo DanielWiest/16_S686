@@ -12,10 +12,9 @@
 #define MAX_LOG_NUMBER 850
 
 /* TODO: 
+ *    SPEED UP the SD writing! (WRITE TO MEMORY DURING FLIGHT THEN COMPILE ALL DATA INTO A CSV AFTER LANDING?!!!)
  *    ADD Throw detection and find the initial velocity direction!
- *    SPEED UP the SD writing!
  *    ADD PID Control???
- *    TUNE Servo throw!
  *    TEST servo movement direction in opposing positions!
  */
 
